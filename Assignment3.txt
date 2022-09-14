@@ -1,0 +1,148 @@
+create table sales_order_data_csv_v1 
+( 
+ORDERNUMBER int, 
+QUANTITYORDERED int, 
+PRICEEACH float, 
+ORDERLINENUMBER int, 
+SALES float, 
+STATUS string, 
+QTR_ID int, 
+MONTH_ID int, 
+YEAR_ID int, 
+PRODUCTLINE string, 
+MSRP int, 
+PRODUCTCODE string, 
+PHONE string, 
+CITY string, 
+STATE string, 
+POSTALCODE string, 
+COUNTRY string, 
+TERRITORY string, 
+CONTACTLASTNAME string, 
+CONTACTFIRSTNAME string, 
+DEALSIZE string 
+) 
+row format delimited 
+fields terminated by ',' 
+tblproperties("skip.header.line.count"="1") 
+;  
+ ------------------------------------------------------
+load data local "/tmp/sales_order_data.csv" 
+into table sales_order_data_csv_v1;
+-----------------------------------------------------
+create table sales_order_data_orc 
+( 
+ORDERNUMBER int, 
+QUANTITYORDERED int, 
+PRICEEACH float, 
+ORDERLINENUMBER int, 
+SALES float, 
+STATUS string, 
+QTR_ID int, 
+MONTH_ID int, 
+YEAR_ID int, 
+PRODUCTLINE string, 
+MSRP int, 
+PRODUCTCODE string, 
+PHONE string, 
+CITY string, 
+STATE string, 
+POSTALCODE string, 
+ 
+CONTACTLASTNAME string, 
+CONTACTFIRSTNAME string, 
+DEALSIZE string, 
+ 
+TERRITORY string 
+)partitioned by (COUNTRY string) 
+stored as orc
+
+
+
+---------------------------------------
+Question a
+---------------------------------------
+select year_id , sum(sales)
+from sales_order_data_orc
+group by year_id
+order by year_id;
+
+
+---------------------------------------
+Question b
+---------------------------------------
+select PRODUCTCODE from (select a.PRODUCTCODE,a.TotalOrders,
+rank() over (order by a.TotalOrders desc) Rnk from  
+(select PRODUCTCODE, count(ORDERNUMBER) as TotalOrders
+from sales_order_data_orc
+group by PRODUCTCODE) a ) b where Rnk=1
+
+
+---------------------------------------
+Question c
+---------------------------------------
+select year_id, QTR_ID , sum(sales)
+from sales_order_data_orc
+group by year_id,QTR_ID
+order by year_id,QTR_ID;
+
+
+---------------------------------------
+Question d
+---------------------------------------
+select year_id,qtr_id,sales from 
+(
+select 
+*, rank() over(partition by year_id order by sales desc) rnk
+ from 
+(
+select year_id, QTR_ID , sum(sales) sales
+from sales_order_data_orc
+group by year_id,QTR_ID
+order by year_id,QTR_ID) a) b where rnk=1
+
+---------------------------------------
+Question e
+---------------------------------------
+select COUNTRY,sales, 'Maxiumum' from 
+(
+select 
+*, rank() over(order by sales desc) rnk
+ from 
+(
+select COUNTRY, sum(sales) sales
+from sales_order_data_orc
+group by COUNTRY) a) b where rnk=1
+union all
+select COUNTRY,sales,'Minimum' from 
+(
+select 
+*, rank() over(order by sales) rnk
+ from 
+(
+select COUNTRY, sum(sales) sales
+from sales_order_data_orc
+group by COUNTRY) a) b where rnk=1
+
+---------------------------------------
+Question f
+---------------------------------------
+select CITY, year_id, QTR_ID , sum(sales)
+from sales_order_data_orc
+group by CITY,year_id,QTR_ID
+order by CITY,year_id,QTR_ID;
+
+
+
+---------------------------------------
+Question g
+---------------------------------------
+select year_id,MONTH_ID,quantity from 
+(
+select *, rank() over (partition by year_id order by quantity desc) rnk
+ from 
+(select year_id, month_id, sum(QUANTITYORDERED) quantity
+from sales_order_data
+group by year_id, month_id
+order by year_id, month_id) a ) b where rnk=1
+
