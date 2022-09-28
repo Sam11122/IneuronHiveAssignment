@@ -1,0 +1,324 @@
+---------------
+Question 1 and 2
+---------------
+
+create table agentperformance
+(
+srl_no int,
+dt string,
+agent_name string,
+total_chats int,
+avg_rspnse_time string,
+avg_resol_time string,
+avg_rat float,
+total_feed int
+	
+)
+row format delimited 
+fields terminated by ','
+tblproperties ('skip.header.line.count'='1');
+
+load data local inpath '/home/cloudera/BIGDATA/AgentPerformance.csv'
+into table agentperformance;
+
+
+
+-----------------------------------------------------
+create table agentloggingreport
+(
+srl_no int,
+agent_name string,
+dt string,
+login_time string,
+logout_time string,
+duration string
+	
+)
+row format delimited 
+fields terminated by ','
+tblproperties ('skip.header.line.count'='1');
+
+
+load data local inpath '/home/cloudera/BIGDATA/AgentLogingReport.csv'
+into table agentloggingreport;
+
+-----------------------------------------------
+Question 3
+Ans:
+
+select distinct agent_name from agentperformance;
+------------------------------------------------------
+Question 4
+Ans:
+
+select agent_name, round(avg(avg_rat),2) avg_rating from agentperformance
+group by agent_name
+
+----------------------------------------------
+Question 5
+Ans:
+
+select agent_name, count(distinct dt) num_wrking_days from agentperformance
+group by agent_name;
+
+-----------------------------------------------------
+Question 6
+
+select agent_name, sum(total_feed) total_feedbacks from agentperformance
+group by agent_name;
+
+-----------------------------------------------------
+Question 7
+
+select agent_name, sum(total_feed) total_feedback
+from agentperformance
+group by agent_name;
+
+-----------------------------------------------------
+Question 8
+
+with cte as
+(select agent_name,
+avg(avg_rat) over (partition by agent_name) avg_rat
+from agentperformance)
+select distinct agent_name from cte where 
+avg_rat between 3.5 and 4;
+
+-----------------------------------------------------
+Question 9
+
+with cte as
+(select agent_name,
+avg(avg_rat) over (partition by agent_name) avg_rat
+from agentperformance)
+select distinct agent_name from cte where 
+avg_rat < 3.5;
+
+-----------------------------------------------------
+Question 10
+
+with cte as
+(select agent_name,
+avg(avg_rat) over (partition by agent_name) avg_rat
+from agentperformance)
+select distinct agent_name from cte where 
+avg_rat > 4.5;
+
+
+-----------------------------------------------------
+Question 11
+
+with cte as
+(select agent_name,
+avg(avg_rat) over (partition by agent_name) avg_rat
+from agentperformance)
+select count(distinct agent_name) from cte where 
+avg_rat > 4.5;
+
+----------------------------------------------------
+Question 12 
+
+with cte as(
+select agent_name,
+total_chats,
+unix_timestamp(concat(dt," ",avg_rspnse_time),'M/d/yyyy H:mm:ss')-
+unix_timestamp(dt,'M/d/yyyy') avg_rspnse_time,
+dense_rank() over 
+(partition by agent_name
+order by weekofyear(from_unixtime((unix_timestamp(dt,'M/d/yyyy')))) ) 
+week_no
+from agentperformance
+)
+select agent_name, 
+week_no, 
+sum(total_chats) total_chats_weekly,
+round(avg(avg_rspnse_time),2) weekly_rspnse_time
+from cte
+group by agent_name, week_no
+having total_chats_weekly>0
+order by agent_name,week_no;
+)
+select 
+agent_name,
+week_no,
+if (total_chats_weekly=0, NULL,weekly_rspnse_time) 
+from cte1
+order by agent_name, week_no
+
+--Here first I have calculated response time in seconds, then used DENSE_RANK function to rank week_no in month of July. Then I have calculated average weekly response time for only those agents whose total_chats in a week are greater than 0, using groupby clause..
+
+----------------------------------------------------
+Question 13
+
+with cte as(
+select agent_name,
+total_chats,
+unix_timestamp(concat(dt," ",avg_resol_time),'M/d/yyyy H:mm:ss')-
+unix_timestamp(dt,'M/d/yyyy') avg_resol_time,
+dense_rank() over 
+(partition by agent_name
+order by weekofyear(from_unixtime((unix_timestamp(dt,'M/d/yyyy')))) ) 
+week_no
+from agentperformance
+)
+select agent_name, 
+week_no, 
+sum(total_chats) total_chats_weekly,
+round(avg(avg_resol_time),2) weekly_resol_time
+from cte
+group by agent_name, week_no
+having total_chats_weekly>0
+order by agent_name,week_no;
+
+--Here first I have calculated resolution  time in seconds, then used DENSE_RANK function to rank week_no in month of July. Then I have calculated average weekly resolution time for only those agents whose total_chats in a week are greater than 0, using groupby clause.
+
+
+
+-------------------------------------
+Question 14
+
+select agent_name, sum(total_feed) 
+from agentperformance
+group by agent_name;
+
+
+----------------------------------------
+Question 15
+
+
+select 
+a.agent_name,
+dense_rank() over (partition by a.agent_name order by a.weekno) week_no,
+round(coalesce(b.hrs,0),4) hour_contribution
+from  
+(select 
+agent_name,
+weekofyear(from_unixtime(unix_timestamp(dt,'M/d/yyyy'))) weekno
+from agentperformance
+group by agent_name, weekofyear(from_unixtime(unix_timestamp(dt,'M/d/yyyy')))) a 
+left join 
+(
+select
+agent_name,
+weekofyear(from_unixtime(unix_timestamp(dt,'dd-MMM-yy'))) weekno,
+sum(cast(split(duration,':')[0] as int) + 
+(cast(split(duration,':')[1] as int))/60 + 
+(cast(split(duration,':')[2] as int))/3600) hrs
+from agentloggingreport
+group by agent_name,
+weekofyear(from_unixtime(unix_timestamp(dt,'dd-MMM-yy')))
+) b
+on a.agent_name = b.agent_name 
+and a.weekno=b.weekno
+
+;
+
+--- First, I am taking all the agent names from agentperformance table as it contains all agent names, then I am taking the hourly contribution from the  agentloggingreport table. Then I am joining these both  on agent_name
+
+
+---------------------------------------------------------
+Question 16
+
+insert overwrite local directory '/home/cloudera/BIGDATA/innerjoin'
+row format delimited
+fields terminated by ','
+select a.agent_name,b.dt, b.login_time,b.logout_time
+from agentperformance a 
+inner join 
+agentloggingreport b 
+on a.agent_name=b.agent_name
+and
+from_unixtime(unix_timestamp(a.dt, 'M/d/yyyy'),'d-MMM-yy') = b.dt
+order by a.agent_name, b.dt;
+
+
+insert overwrite local directory '/home/cloudera/BIGDATA/leftjoin'
+row format delimited
+fields terminated by ','
+select a.agent_name,b.dt, b.login_time,b.logout_time
+from agentperformance a 
+left join 
+agentloggingreport b 
+on a.agent_name=b.agent_name
+and
+from_unixtime(unix_timestamp(a.dt, 'M/d/yyyy'),'d-MMM-yy') = b.dt
+order by a.agent_name, b.dt;
+
+insert overwrite local directory '/home/cloudera/BIGDATA/rightjoin'
+row format delimited
+fields terminated by ','
+select a.agent_name,b.dt, b.login_time,b.logout_time
+from agentperformance a 
+right join 
+agentloggingreport b 
+on a.agent_name=b.agent_name
+and
+from_unixtime(unix_timestamp(a.dt, 'M/d/yyyy'),'d-MMM-yy') = b.dt
+
+-----------------------------------------------------------------------------------------------------
+Question 17
+
+CREATE TABLE `agentperformance_partbucket`(	
+  `srl_no` int, 	
+  `dt` date,
+  `total_chats` int, 	
+  `avg_rspnse_time` int, 	
+  `avg_resol_time` int, 	
+  `avg_rat` decimal(10,2), 	
+  `total_feed` int)
+partitioned by (agent_name string)
+clustered by (dt) sorted by (dt) into 6 buckets
+;
+  
+set hive.enforce.bucketing = true;
+set hive.exec.dynamic.partition=true;    
+set hive.exec.dynamic.partition.mode=nonstrict;  
+
+
+insert into agentperformance_partbucket PARTITION (agent_name)
+select
+srl_no srl_no,
+from_unixtime(unix_timestamp(dt,'M/d/yyyy'),'yyyy-MM-dd') dt  ,
+total_chats total_chats ,
+cast(split(avg_rspnse_time,':')[0] as int)*3600 + 
+(cast(split(avg_rspnse_time,':')[1] as int))*60 + 
+(cast(split(avg_rspnse_time,':')[2] as int)) avg_rspnse_time ,
+cast(split(avg_resol_time,':')[0] as int)*3600 + 
+(cast(split(avg_resol_time,':')[1] as int))*60 + 
+(cast(split(avg_resol_time,':')[2] as int)) avg_resol_time  ,
+avg_rat  avg_rat,
+total_feed total_feed,
+agent_name agent_name 
+from 
+agentperformance
+;
+
+select * from agentperformance_partbucket;
+
+
+
+create table agentloggingreport_partbucket
+(
+srl_no int,
+dt date,
+login_time string,
+logout_time string,
+duration bigint
+)
+partitioned by (agent_name string)
+clustered by (dt) sorted by  (dt) into 12 buckets;
+
+
+insert into agentloggingreport_partbucket PARTITION (agent_name)
+select
+srl_no srl_no,
+from_unixtime(unix_timestamp(dt,'dd-MMM-yy'),'yyyy-MM-dd') dt  ,
+login_time  login_time,
+logout_time  logout_time,
+cast(split(duration,':')[0] as int)*3600 + 
+(cast(split(duration,':')[1] as int))*60 + 
+(cast(split(duration,':')[2] as int)) duration,
+agent_name
+from 
+agentloggingreport
+;
